@@ -9,44 +9,52 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="361*"/>
-            <ColumnDefinition Width="129*"/>
+            <ColumnDefinition Width="3*"/>
+            <ColumnDefinition Width="1*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Input Section -->
-        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="10,0,10,0" Height="257">
+        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="10,0,10,0">
             <Label Content="Wybierz plik lub wklej tekst" HorizontalAlignment="Center" FontSize="16"/>
-
-            <TextBox x:Name="TextInputEditor" AcceptsReturn="True" Height="100" Margin="5" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextChanged="OnTextChanged"/>
-
+            <TextBox x:Name="TextInputEditor" AcceptsReturn="True" Height="100" Margin="5" 
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" 
+                     TextChanged="OnTextChanged"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="5">
                 <Button Content="Wybierz plik" Click="OnChooseFileClicked" Width="120" Margin="5"/>
-                <Button Content="Deszyfruj" Click="OnDecryptFileClicked" Width="120" Margin="5" IsEnabled="False" x:Name="ProcessButton"/>
+                <Button Content="Deszyfruj" Click="OnDecryptFileClicked" Width="120" Margin="5" 
+                        IsEnabled="False" x:Name="ProcessButton"/>
             </StackPanel>
-
-            <CheckBox Content="Logger" IsChecked="True" x:Name="Filter1CheckBox" VerticalAlignment="Top" Margin="5"/>
-            <CheckBox Content="Atrybuty" IsChecked="True" x:Name="Filter2CheckBox" VerticalAlignment="Top" Margin="5"/>
-            <CheckBox Content="APDU" IsChecked="True" x:Name="Filter3CheckBox" VerticalAlignment="Top" Margin="5"/>
+            <StackPanel Orientation="Horizontal" Margin="5">
+                <CheckBox Content="Logger" IsChecked="True" x:Name="Filter1CheckBox" 
+                          Checked="OnFilterChanged" Unchecked="OnFilterChanged" Margin="5"/>
+                <CheckBox Content="Atrybuty" IsChecked="True" x:Name="Filter2CheckBox" 
+                          Checked="OnFilterChanged" Unchecked="OnFilterChanged" Margin="5"/>
+                <CheckBox Content="APDU" IsChecked="True" x:Name="Filter3CheckBox" 
+                          Checked="OnFilterChanged" Unchecked="OnFilterChanged" Margin="5"/>
+                <CheckBox Content="P.1.0" IsChecked="True" x:Name="FilterP1CheckBox" 
+                          Checked="OnFilterChanged" Unchecked="OnFilterChanged" Margin="5"/>
+                <CheckBox Content="P.2.0" IsChecked="True" x:Name="FilterP2CheckBox" 
+                         Checked="OnFilterChanged" Unchecked="OnFilterChanged" Margin="5"/>
+                <CheckBox Content="P.14.0" IsChecked="True" x:Name="FilterP14CheckBox" 
+                          Checked="OnFilterChanged" Unchecked="OnFilterChanged" Margin="5"/>
+            </StackPanel>
         </StackPanel>
+        
+        <DataGrid x:Name="DataMessagesGrid"
+                  Grid.Row="1" Grid.Column="0"
+                  ItemsSource="{Binding FilteredMessages}"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  SelectionMode="Extended"
+                  Margin="10">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Wiadomość" Binding="{Binding}" Width="Auto"/>
+            </DataGrid.Columns>
+        </DataGrid>
 
-        <!-- Log Messages Section -->
-        <ListBox Grid.Row="1" Grid.Column="0" x:Name="LogListBox" ItemsSource="{Binding DataMessages}" Margin="10,10,10,52" />
-
-        <!-- Processed Data Section -->
-        <StackPanel VerticalAlignment="Center" Margin="0,0,10,0" Grid.Column="1" Height="744" Grid.RowSpan="2">
-            <Label Content="Data Messages:" HorizontalAlignment="Center" FontSize="16"/>
-
-            <ListBox x:Name="DataMessagesListBox" ItemsSource="{Binding LogMessages}" Margin="5" Height="673" />
-        </StackPanel>
-
-        <!-- Bottom Section -->
-        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" Margin="260,457,0,0" Width="130">
+        <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="10">
+            <Label Content="Log Messages" FontSize="16"/>
+            <ListBox x:Name="LogListBox" ItemsSource="{Binding LogMessages}" Height="683"/>
             <Button Content="Zapisz do pliku" Click="OnSaveTextClicked" Width="120" Margin="5"/>
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" Margin="-11,462,463,15" Grid.Row="1">
-            <Button Content="Poprzednia strona" Click="OnPreviousPageButtonClicked" Width="120" Margin="5"/>
-            <TextBlock x:Name="PageIndicator1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="5" FontSize="14"/>
-            <Button Content="Następna strona" Click="OnNextPageButtonClicked" Width="579" Margin="5"/>
         </StackPanel>
     </Grid>
 </Window>

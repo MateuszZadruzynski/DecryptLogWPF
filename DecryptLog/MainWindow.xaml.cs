@@ -10,33 +10,47 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Win32;
+using System.ComponentModel;
+using System.Windows.Controls;
+using System.Windows.Data;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Deszyfrowanie_Logów
 {
     public partial class MainWindow : Window
     {
         public ObservableCollection<string> LogMessages { get; set; } = new ObservableCollection<string>();
-        public ObservableCollection<string> DataMessages { get; set; } = new ObservableCollection<string>();
+        public ObservableCollection<string> AllMessages { get; set; } = new ObservableCollection<string>();
+        public ICollectionView FilteredMessages { get; private set; }
 
         private string decryptedLog = string.Empty;
         private string selectedFilePath;
-        private int currentPage = 0;
-        private int totalPages = 0;
-        private const int linesPerPage = 3000;
 
         private static readonly Regex LoggerRegex = new Regex(@"\[\w+Logger\]\s\d{2}:\d{2}:\d{2}\.\d{2}\s\d{5}\s[RW]\s.*", RegexOptions.Compiled);
-        private static readonly Regex AttributeRegex = new Regex(@"Atrybut\s\d+\sdane:\s<\?xml.*?\/>", RegexOptions.Compiled);
         private static readonly Regex ApduRegex = new Regex(@"<- APDU:.*|-> APDU:.*", RegexOptions.Compiled);
+        private static readonly Regex ProfileP1Regex = new Regex(@"\""Profile\"",""id\"":""P\.1\.0"",""content\"":""(.*?)""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP14Regex = new Regex(@"\""Profile\"",""id\"":""P\.14\.0"",""content\"":""(.*?)""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP2Regex = new Regex(@"\""Profile\"",""id\"":""P\.2\.0"",""content\"":""(.*?)""", RegexOptions.Compiled);
+
 
         public MainWindow()
         {
             InitializeComponent();
             DataContext = this;
+
+            // Setup filtering
+            FilteredMessages = CollectionViewSource.GetDefaultView(AllMessages);
+            FilteredMessages.Filter = FilterMessages;
         }
 
         private void UpdateProcessButtonState()
         {
             ProcessButton.IsEnabled = !string.IsNullOrEmpty(TextInputEditor.Text) || !string.IsNullOrEmpty(selectedFilePath);
+        }
+
+        private void OnTextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdateProcessButtonState();
         }
 
         private async void OnChooseFileClicked(object sender, RoutedEventArgs e)
@@ -50,44 +64,46 @@ namespace Deszyfrowanie_Logów
             }
         }
 
-        private void OnTextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        {
-            UpdateProcessButtonState();
-        }
-
         private async void OnDecryptFileClicked(object sender, RoutedEventArgs e)
         {
             LogMessages.Add("Rozpoczynam deszyfrowanie...");
-            if (!string.IsNullOrEmpty(selectedFilePath))
-            {
-                await DecryptAndDisplayFileAsync(selectedFilePath);
-            }
-            else if (!string.IsNullOrEmpty(TextInputEditor.Text))
-            {
-                decryptedLog = await DecryptTextAsync(TextInputEditor.Text);
-                decryptedLog = decryptedLog.Replace("\\n", Environment.NewLine);
-                totalPages = (int)Math.Ceiling((double)decryptedLog.Length / linesPerPage);
-                DisplayDecryptedContentGradually(decryptedLog);
-            }
-            else
-            {
-                MessageBox.Show("Brak pliku lub tekstu do deszyfrowania.");
-            }
-        }
-
-        private async Task DecryptAndDisplayFileAsync(string filePath)
-        {
             try
             {
-                string fileContent = await File.ReadAllTextAsync(filePath);
-                decryptedLog = await DecryptTextAsync(fileContent);
-                totalPages = (int)Math.Ceiling((double)decryptedLog.Length / linesPerPage);
-                DisplayDecryptedContentGradually(decryptedLog);
+                string content = !string.IsNullOrEmpty(selectedFilePath)
+                    ? await File.ReadAllTextAsync(selectedFilePath)
+                    : TextInputEditor.Text;
+
+                decryptedLog = await DecryptTextAsync(content);
+                decryptedLog = decryptedLog.Replace("\\n", Environment.NewLine);
+
+                AllMessages.Clear();
+                foreach (var line in decryptedLog.Split(Environment.NewLine, StringSplitOptions.None))
+                {
+                    AllMessages.Add(line);
+                }
+                FilteredMessages.Refresh();
+
+                Console.WriteLine($"Liczba wiadomości: {FilteredMessages.Cast<object>().Count()}");
             }
             catch (Exception ex)
             {
-                LogMessages.Add($"Błąd podczas deszyfrowania pliku: {ex.Message}");
+                LogMessages.Add($"Błąd: {ex.Message}");
             }
+        }
+
+        private async Task LoadMessagesAsync(string content)
+        {
+            AllMessages.Clear();
+            var lines = content.Split(Environment.NewLine, StringSplitOptions.None);
+
+            // Dodawanie do kolekcji asynchronicznie w partiach, aby zminimalizować wpływ na wydajność
+            foreach (var line in lines)
+            {
+                AllMessages.Add(line);
+            }
+
+            // Po załadowaniu wszystkich linii, filtrujemy
+            FilteredMessages.Refresh();
         }
 
         private async Task<string> DecryptTextAsync(string encryptedString)
@@ -95,11 +111,14 @@ namespace Deszyfrowanie_Logów
             try
             {
                 byte[] compressedData = Convert.FromBase64String(encryptedString);
+
                 using (MemoryStream memoryStream = new MemoryStream(compressedData))
                 using (GZipStream gzipStream = new GZipStream(memoryStream, CompressionMode.Decompress))
                 using (StreamReader reader = new StreamReader(gzipStream, Encoding.UTF8))
                 {
+                    LogMessages.Add("Rozpakowywanie gzip...");
                     string decompressedText = await reader.ReadToEndAsync();
+                    LogMessages.Add("Zakończono rozpakowywanie gzip.");
                     return DecodeBase64Fragments(decompressedText);
                 }
             }
@@ -112,93 +131,67 @@ namespace Deszyfrowanie_Logów
 
         private string DecodeBase64Fragments(string input)
         {
+            LogMessages.Add("Decodowanie fragmentów 'content'...");
             string base64Pattern = "\\\\\"content\\\\\":\\\\\"([^\"]+)\\\\\"";
             var matches = Regex.Matches(input, base64Pattern);
-            var decodedFragments = input;
 
+            var decodedFragments = input;
+            LogMessages.Add($"Liczba fragmentów do zdekodowania: {matches.Count}");
+
+            int matchIndex = 1;
             foreach (Match match in matches)
             {
                 string base64String = match.Groups[1].Value;
-                if (IsBase64String(base64String))
+
+                if (!string.IsNullOrWhiteSpace(base64String) && IsBase64String(base64String))
                 {
                     try
                     {
                         byte[] data = Convert.FromBase64String(base64String);
                         string decodedString = Encoding.UTF8.GetString(data);
                         decodedFragments = decodedFragments.Replace(base64String, decodedString);
+                        LogMessages.Add($"Fragment {matchIndex} zdekodowany.");
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        LogMessages.Add("Błąd podczas dekodowania fragmentu.");
+                        LogMessages.Add($"Błąd podczas dekodowania fragmentu {matchIndex}: {ex.Message}");
                     }
                 }
+                matchIndex++;
             }
 
+            LogMessages.Add("Dekodowanie zakończone.");
             return decodedFragments;
+        }
+
+        private bool FilterMessages(object item)
+        {
+            var line = item as string;
+            return (Filter1CheckBox.IsChecked == true && LoggerRegex.IsMatch(line)) ||
+                   (Filter3CheckBox.IsChecked == true && ApduRegex.IsMatch(line)) ||
+                   (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line)) ||
+                   (FilterP2CheckBox.IsChecked == true && ProfileP2Regex.IsMatch(line)) ||
+                   (FilterP14CheckBox.IsChecked == true && ProfileP14Regex.IsMatch(line));
+        }
+
+        private void OnFilterChanged(object sender, RoutedEventArgs e)
+        {
+            FilteredMessages?.Refresh();
         }
 
         private static bool IsBase64String(string input)
         {
             Span<byte> buffer = new Span<byte>(new byte[input.Length]);
-            return Convert.TryFromBase64String(input, buffer, out int bytesParsed);
-        }
-
-        private void DisplayDecryptedContentGradually(string decryptedContent)
-        {
-            var lines = decryptedContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            int totalLines = lines.Length;
-
-            int startLine = currentPage * linesPerPage;
-            int endLine = Math.Min(startLine + linesPerPage, totalLines);
-
-            DataMessages.Clear();
-            for (int i = startLine; i < endLine; i++)
-            {
-                DataMessages.Add(lines[i]);
-            }
-
-            if (endLine >= totalLines)
-            {
-                LogMessages.Add("Osiągnięto koniec danych.");
-            }
-
-            PageIndicator.Text = $"{currentPage + 1}/{totalPages}";
-        }
-
-        private void OnPreviousPageButtonClicked(object sender, RoutedEventArgs e)
-        {
-            if (currentPage > 0)
-            {
-                currentPage--;
-                DisplayDecryptedContentGradually(decryptedLog);
-            }
-            else
-            {
-                LogMessages.Add("Jesteś na pierwszej stronie.");
-            }
-        }
-
-        private void OnNextPageButtonClicked(object sender, RoutedEventArgs e)
-        {
-            if (currentPage < totalPages - 1)
-            {
-                currentPage++;
-                DisplayDecryptedContentGradually(decryptedLog);
-            }
-            else
-            {
-                LogMessages.Add("Jesteś na ostatniej stronie.");
-            }
+            return Convert.TryFromBase64String(input, buffer, out _);
         }
 
         private async void OnSaveTextClicked(object sender, RoutedEventArgs e)
         {
             try
             {
-                string fileName = $"DecryptedLog_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
                 var saveFileDialog = new SaveFileDialog
                 {
-                    FileName = fileName,
+                    FileName = $"DecryptedLog_{DateTime.Now:yyyyMMdd_HHmmss}.txt",
                     Filter = "Text files (*.txt)|*.txt"
                 };
                 if (saveFileDialog.ShowDialog() == true)
