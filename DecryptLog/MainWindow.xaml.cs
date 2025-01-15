@@ -14,6 +14,7 @@ using System.ComponentModel;
 using System.Windows.Controls;
 using System.Windows.Data;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Runtime.Serialization.Formatters;
 
 namespace Deszyfrowanie_Logów
 {
@@ -28,17 +29,17 @@ namespace Deszyfrowanie_Logów
 
         private static readonly Regex LoggerRegex = new Regex(@"\[\w+Logger\]\s\d{2}:\d{2}:\d{2}\.\d{2}\s\d{5}\s[RW]\s.*", RegexOptions.Compiled);
         private static readonly Regex ApduRegex = new Regex(@"<- APDU:.*|-> APDU:.*", RegexOptions.Compiled);
-        private static readonly Regex ProfileP1Regex = new Regex(@"\""Profile\"",""id\"":""P\.1\.0"",""content\"":""(.*?)""", RegexOptions.Compiled);
-        private static readonly Regex ProfileP14Regex = new Regex(@"\""Profile\"",""id\"":""P\.14\.0"",""content\"":""(.*?)""", RegexOptions.Compiled);
-        private static readonly Regex ProfileP2Regex = new Regex(@"\""Profile\"",""id\"":""P\.2\.0"",""content\"":""(.*?)""", RegexOptions.Compiled);
-
+        private static readonly Regex TableT0Regex = new Regex(@"\""type\"":\""Table\"",\""id\"":\""T\.0\"",""content\"":""(.*?)""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP1Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.1\.0\""[^{]*\""content\"":\""(.*?)\""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP14Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.14\.0\""[^{]*\""content\"":""(.*?)""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP2Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.2\.0\""[^{]*\""content\"":""(.*?)""", RegexOptions.Compiled);
+        private static readonly Regex AllTextRegex = new Regex(@".*", RegexOptions.Compiled);
 
         public MainWindow()
         {
             InitializeComponent();
             DataContext = this;
 
-            // Setup filtering
             FilteredMessages = CollectionViewSource.GetDefaultView(AllMessages);
             FilteredMessages.Filter = FilterMessages;
         }
@@ -76,12 +77,7 @@ namespace Deszyfrowanie_Logów
                 decryptedLog = await DecryptTextAsync(content);
                 decryptedLog = decryptedLog.Replace("\\n", Environment.NewLine);
 
-                AllMessages.Clear();
-                foreach (var line in decryptedLog.Split(Environment.NewLine, StringSplitOptions.None))
-                {
-                    AllMessages.Add(line);
-                }
-                FilteredMessages.Refresh();
+                await LoadMessagesAsync(decryptedLog);
 
                 Console.WriteLine($"Liczba wiadomości: {FilteredMessages.Cast<object>().Count()}");
             }
@@ -94,15 +90,10 @@ namespace Deszyfrowanie_Logów
         private async Task LoadMessagesAsync(string content)
         {
             AllMessages.Clear();
-            var lines = content.Split(Environment.NewLine, StringSplitOptions.None);
-
-            // Dodawanie do kolekcji asynchronicznie w partiach, aby zminimalizować wpływ na wydajność
-            foreach (var line in lines)
+            foreach (var line in content.Split(Environment.NewLine, StringSplitOptions.None))
             {
                 AllMessages.Add(line);
             }
-
-            // Po załadowaniu wszystkich linii, filtrujemy
             FilteredMessages.Refresh();
         }
 
@@ -167,16 +158,92 @@ namespace Deszyfrowanie_Logów
         private bool FilterMessages(object item)
         {
             var line = item as string;
-            return (Filter1CheckBox.IsChecked == true && LoggerRegex.IsMatch(line)) ||
-                   (Filter3CheckBox.IsChecked == true && ApduRegex.IsMatch(line)) ||
-                   (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line)) ||
-                   (FilterP2CheckBox.IsChecked == true && ProfileP2Regex.IsMatch(line)) ||
-                   (FilterP14CheckBox.IsChecked == true && ProfileP14Regex.IsMatch(line));
+
+            if (FilterAllCheckBox.IsChecked == true)
+                return true;
+
+            if (FilterLoggerCheckBox.IsChecked == true && LoggerRegex.IsMatch(line))
+                return true;
+
+            if (FilterAPDUCheckBox.IsChecked == true && ApduRegex.IsMatch(line))
+                return true;
+
+            if (FilterT0CheckBox.IsChecked == true && TableT0Regex.IsMatch(line))
+                return true;
+
+            if (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line))
+                return true;
+
+            if (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line))
+                return true;
+
+            if (FilterP2CheckBox.IsChecked == true && ProfileP2Regex.IsMatch(line))
+                return true;
+
+            if (FilterP14CheckBox.IsChecked == true && ProfileP14Regex.IsMatch(line))
+                return true;
+
+            return false;
         }
 
         private void OnFilterChanged(object sender, RoutedEventArgs e)
         {
-            FilteredMessages?.Refresh();
+            try
+            {
+                if (FilterAllCheckBox != null)
+                {
+                    if (sender == FilterAllCheckBox)
+                    {
+                        if (FilterAllCheckBox.IsChecked == true)
+                            EnableAllFilters();
+                        else
+                            DisableAllFilters();
+                    }
+                    else
+                        UpdateFilterAllCheckBoxState();
+                }
+
+                FilteredMessages?.Refresh();
+            }
+            catch (Exception ex)
+            {
+                LogMessages.Add($"Błąd podczas generowania filtrów: {ex.Message}");
+            }
+        }
+
+        private void EnableAllFilters()
+        {
+            FilterAPDUCheckBox.IsChecked = true;
+            FilterP14CheckBox.IsChecked = true;
+            FilterP1CheckBox.IsChecked = true;
+            FilterP2CheckBox.IsChecked = true;
+            FilterLoggerCheckBox.IsChecked = true;
+            FilterT0CheckBox.IsChecked = true;
+        }
+
+        private void DisableAllFilters()
+        {
+            FilterAPDUCheckBox.IsChecked = false;
+            FilterP14CheckBox.IsChecked = false;
+            FilterP1CheckBox.IsChecked = false;
+            FilterP2CheckBox.IsChecked = false;
+            FilterLoggerCheckBox.IsChecked = false;
+            FilterT0CheckBox.IsChecked = false;
+        }
+
+        private void UpdateFilterAllCheckBoxState()
+        {
+            bool allSelected = FilterAPDUCheckBox.IsChecked == true &&
+                               FilterP14CheckBox.IsChecked == true &&
+                               FilterP1CheckBox.IsChecked == true &&
+                               FilterP2CheckBox.IsChecked == true &&
+                               FilterLoggerCheckBox.IsChecked == true &&
+                               FilterT0CheckBox.IsChecked == true;
+
+            if (allSelected && FilterAllCheckBox.IsChecked != true)
+                FilterAllCheckBox.IsChecked = true;
+            else if (!allSelected && FilterAllCheckBox.IsChecked == true)
+                FilterAllCheckBox.IsChecked = false;
         }
 
         private static bool IsBase64String(string input)
