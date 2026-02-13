@@ -13,8 +13,6 @@ using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows.Controls;
 using System.Windows.Data;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using System.Runtime.Serialization.Formatters;
 
 namespace Deszyfrowanie_Logów
 {
@@ -159,7 +157,7 @@ namespace Deszyfrowanie_Logów
         {
             var line = item as string;
 
-            if (FilterAllCheckBox.IsChecked == true)
+            if (FilterAllCheckBox.IsChecked == true && AllTextRegex.IsMatch(line))
                 return true;
 
             if (FilterLoggerCheckBox.IsChecked == true && LoggerRegex.IsMatch(line))
