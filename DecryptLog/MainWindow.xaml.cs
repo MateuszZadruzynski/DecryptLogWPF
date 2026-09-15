@@ -72,6 +72,13 @@ namespace Deszyfrowanie_Logów
                     ? await File.ReadAllTextAsync(selectedFilePath)
                     : TextInputEditor.Text;
 
+                // Plik wejściowy ma nagłówek przed pierwszym ":".
+                // Przykład: DriverLog$30049683$:H4sIA...
+                // Do Base64 przekazujemy wyłącznie część po ":".
+                int firstColon = content.IndexOf(':');
+                if (firstColon >= 0)
+                    content = content.Substring(firstColon + 1).Trim();
+
                 decryptedLog = await DecryptTextAsync(content);
                 decryptedLog = decryptedLog.Replace("\\n", Environment.NewLine);
 
