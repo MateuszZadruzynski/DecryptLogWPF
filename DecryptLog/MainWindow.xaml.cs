@@ -25,12 +25,12 @@ namespace Deszyfrowanie_Logów
         private string decryptedLog = string.Empty;
         private string selectedFilePath;
 
-        private static readonly Regex LoggerRegex = new Regex(@"\[\w+Logger\]\s\d{2}:\d{2}:\d{2}\.\d{2}\s\d{5}\s[RW]\s.*", RegexOptions.Compiled);
+        private static readonly Regex LoggerRegex = new Regex(@"\[\w+Logger\].*", RegexOptions.Compiled);
         private static readonly Regex ApduRegex = new Regex(@"<- APDU:.*|-> APDU:.*", RegexOptions.Compiled);
-        private static readonly Regex TableT0Regex = new Regex(@"\""type\"":\""Table\"",\""id\"":\""T\.0\"",""content\"":""(.*?)""", RegexOptions.Compiled);
-        private static readonly Regex ProfileP1Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.1\.0\""[^{]*\""content\"":\""(.*?)\""", RegexOptions.Compiled);
-        private static readonly Regex ProfileP14Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.14\.0\""[^{]*\""content\"":""(.*?)""", RegexOptions.Compiled);
-        private static readonly Regex ProfileP2Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.2\.0\""[^{]*\""content\"":""(.*?)""", RegexOptions.Compiled);
+        private static readonly Regex TableT0Regex = new Regex(@"\""type\"":\""Table\"",\""id\"":\""T\.0\""[^}]*\""content\"":\""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP1Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.1\.0\""[^}]*\""content\"":\""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP14Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.14\.0\""[^}]*\""content\"":\""", RegexOptions.Compiled);
+        private static readonly Regex ProfileP2Regex = new Regex(@"\""type\"":\""Profile\"",\""id\"":\""P\.2\.0\""[^}]*\""content\"":\""", RegexOptions.Compiled);
         private static readonly Regex AllTextRegex = new Regex(@".*", RegexOptions.Compiled);
 
         public MainWindow()
@@ -75,6 +75,10 @@ namespace Deszyfrowanie_Logów
                 decryptedLog = await DecryptTextAsync(content);
                 decryptedLog = decryptedLog.Replace("\\n", Environment.NewLine);
 
+                // Usuwamy techniczny prefiks czasu/licznika/loggera z każdej linii,
+                // dzięki czemu filtry działają na właściwej treści logu.
+                decryptedLog = TrimLogPrefix(decryptedLog);
+
                 await LoadMessagesAsync(decryptedLog);
 
                 Console.WriteLine($"Liczba wiadomości: {FilteredMessages.Cast<object>().Count()}");
@@ -83,6 +87,18 @@ namespace Deszyfrowanie_Logów
             {
                 LogMessages.Add($"Błąd: {ex.Message}");
             }
+        }
+
+        private static string TrimLogPrefix(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return content;
+
+            return Regex.Replace(
+                content,
+                @"(?m)^(?:\d{4}-\d{2}-\d{2}\s+)?\d{2}:\d{2}:\d{2}\.\d{2,3}\s+\d{5}\s+[A-Z]\s+(?=\[?\w+Logger\]?|\[?[A-Z_]+\]?\s|<-|->)",
+                ""
+            );
         }
 
         private async Task LoadMessagesAsync(string content)
@@ -156,38 +172,43 @@ namespace Deszyfrowanie_Logów
         private bool FilterMessages(object item)
         {
             var line = item as string;
+            if (line is not null)
+            {
+                if (FilterAllCheckBox.IsChecked == true)
+                    return true;
 
-            if (FilterAllCheckBox.IsChecked == true && AllTextRegex.IsMatch(line))
-                return true;
+                if (FilterLoggerCheckBox.IsChecked == true && LoggerRegex.IsMatch(line))
+                    return true;
 
-            if (FilterLoggerCheckBox.IsChecked == true && LoggerRegex.IsMatch(line))
-                return true;
+                if (FilterAPDUCheckBox.IsChecked == true && ApduRegex.IsMatch(line))
+                    return true;
 
-            if (FilterAPDUCheckBox.IsChecked == true && ApduRegex.IsMatch(line))
-                return true;
+                if (FilterT0CheckBox.IsChecked == true && TableT0Regex.IsMatch(line))
+                    return true;
 
-            if (FilterT0CheckBox.IsChecked == true && TableT0Regex.IsMatch(line))
-                return true;
+                if (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line))
+                    return true;
 
-            if (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line))
-                return true;
+                if (FilterP2CheckBox.IsChecked == true && ProfileP2Regex.IsMatch(line))
+                    return true;
 
-            if (FilterP1CheckBox.IsChecked == true && ProfileP1Regex.IsMatch(line))
-                return true;
-
-            if (FilterP2CheckBox.IsChecked == true && ProfileP2Regex.IsMatch(line))
-                return true;
-
-            if (FilterP14CheckBox.IsChecked == true && ProfileP14Regex.IsMatch(line))
-                return true;
-
+                if (FilterP14CheckBox.IsChecked == true && ProfileP14Regex.IsMatch(line))
+                    return true;
+            }
             return false;
         }
 
+        private bool _updatingFilters = false;
+
         private void OnFilterChanged(object sender, RoutedEventArgs e)
         {
+            if (_updatingFilters)
+                return;
+
             try
             {
+                _updatingFilters = true;
+
                 if (FilterAllCheckBox != null)
                 {
                     if (sender == FilterAllCheckBox)
@@ -198,7 +219,23 @@ namespace Deszyfrowanie_Logów
                             DisableAllFilters();
                     }
                     else
-                        UpdateFilterAllCheckBoxState();
+                    {
+                        CheckBox changedFilter = sender as CheckBox;
+
+                        // Jeżeli "All" było zaznaczone i użytkownik kliknie
+                        // pojedynczy filtr, przechodzimy na ten jeden filtr.
+                        if (changedFilter?.IsChecked == true &&
+                            FilterAllCheckBox.IsChecked == true)
+                        {
+                            DisableAllFilters();
+                            changedFilter.IsChecked = true;
+                            FilterAllCheckBox.IsChecked = false;
+                        }
+                        else
+                        {
+                            UpdateFilterAllCheckBoxState();
+                        }
+                    }
                 }
 
                 FilteredMessages?.Refresh();
@@ -206,6 +243,10 @@ namespace Deszyfrowanie_Logów
             catch (Exception ex)
             {
                 LogMessages.Add($"Błąd podczas generowania filtrów: {ex.Message}");
+            }
+            finally
+            {
+                _updatingFilters = false;
             }
         }
 
