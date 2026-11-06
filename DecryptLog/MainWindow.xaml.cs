@@ -13,6 +13,8 @@ using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace Deszyfrowanie_Logów
 {
@@ -46,7 +48,68 @@ namespace Deszyfrowanie_Logów
         {
             ProcessButton.IsEnabled = !string.IsNullOrEmpty(TextInputEditor.Text) || !string.IsNullOrEmpty(selectedFilePath);
         }
+        private void OnGenerateCodeClicked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                GeneratedCodeTextBox.Text = GenerateOptoCustomProfileCode();
 
+                LogMessages.Add(
+                    $"Wygenerowano kod dostępu: {GeneratedCodeTextBox.Text}");
+            }
+            catch (Exception ex)
+            {
+                LogMessages.Add($"Błąd generowania kodu: {ex.Message}");
+            }
+        }
+
+        private void OnCopyCodeClicked(object sender, RoutedEventArgs e)
+        {
+            string code = GeneratedCodeTextBox.Text;
+
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                LogMessages.Add("Brak kodu do skopiowania.");
+                return;
+            }
+
+            const int maxAttempts = 3;
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    Clipboard.SetDataObject(code, true);
+
+                    LogMessages.Add("Kod dostępu skopiowany do schowka.");
+                    return;
+                }
+                catch (COMException ex)
+                {
+                    if (attempt == maxAttempts)
+                    {
+                        LogMessages.Add(
+                            $"Nie udało się skopiować kodu do schowka: {ex.Message}");
+
+                        MessageBox.Show(
+                            "Nie można uzyskać dostępu do schowka Windows.\n\n" +
+                            "Spróbuj ponownie za chwilę lub skopiuj kod ręcznie.",
+                            "Problem ze schowkiem",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+
+                        return;
+                    }
+
+                    Thread.Sleep(100);
+                }
+                catch (Exception ex)
+                {
+                    LogMessages.Add($"Błąd kopiowania kodu: {ex.Message}");
+                    return;
+                }
+            }
+        }
         private void OnTextChanged(object sender, TextChangedEventArgs e)
         {
             UpdateProcessButtonState();
@@ -297,7 +360,31 @@ namespace Deszyfrowanie_Logów
             Span<byte> buffer = new Span<byte>(new byte[input.Length]);
             return Convert.TryFromBase64String(input, buffer, out _);
         }
+        /// <summary>
+        /// Generowanie dynamicznego kodu dostępu wymaganego
+        /// do otwarcia edycji profilu odczytowego.
+        /// </summary>
+        public static string GenerateOptoCustomProfileCode()
+        {
+            DateTime currentDate = DateTime.Now;
 
+            int secret = 482173;
+
+            int year = currentDate.Year;
+            int month = currentDate.Month;
+            int day = currentDate.Day;
+
+            int code = (
+                (year * 7919) +
+                (month * 1543) +
+                (day * 3571) +
+                (year * month * 97) +
+                (month * day * 389) +
+                secret
+            ) % 10000;
+
+            return code.ToString("D1");
+        }
         private async void OnSaveTextClicked(object sender, RoutedEventArgs e)
         {
             try
